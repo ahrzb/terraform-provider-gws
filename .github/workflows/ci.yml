@@ -1,0 +1,17 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      # `nix flake check` covers the build and the Go tests; the tests are offline (the Gmail
+      # client is exercised against an httptest fake), so no credentials are needed here.
+      - run: nix flake check -L
+      - run: nix build .#default -L
