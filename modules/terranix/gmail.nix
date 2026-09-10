@@ -28,7 +28,8 @@ let
     "STARRED"
   ];
   isSystem = n: builtins.elem n systemLabels || lib.hasPrefix "CATEGORY_" n;
-  labelRef = n: if isSystem n then n else ''''${data.gws_gmail_labels.${cfg.dataSourceName}.ids["${n}"]}'';
+  labelRef =
+    n: if isSystem n then n else ''''${data.gws_gmail_labels.${cfg.dataSourceName}.ids["${n}"]}'';
 
   # Terraform resource names may not begin with a digit, and rule names are human strings.
   resourceName =
@@ -40,19 +41,18 @@ let
 
   toResource = rule: {
     name = resourceName rule.name;
-    value =
-      lib.filterAttrs (_: v: v != null && v != [ ]) {
-        query = rule.query;
-        negated_query = rule.unless;
-        from = rule.match.from;
-        to = rule.match.to;
-        subject = rule.match.subject;
-        add_label_ids = map labelRef (lib.optional (rule.label != null) rule.label ++ rule.extraLabels);
-        remove_label_ids =
-          lib.optional rule.archive "INBOX"
-          ++ lib.optional rule.neverImportant "IMPORTANT"
-          ++ lib.optional rule.neverSpam "SPAM";
-      };
+    value = lib.filterAttrs (_: v: v != null && v != [ ]) {
+      query = rule.query;
+      negated_query = rule.unless;
+      from = rule.match.from;
+      to = rule.match.to;
+      subject = rule.match.subject;
+      add_label_ids = map labelRef (lib.optional (rule.label != null) rule.label ++ rule.extraLabels);
+      remove_label_ids =
+        lib.optional rule.archive "INBOX"
+        ++ lib.optional rule.neverImportant "IMPORTANT"
+        ++ lib.optional rule.neverSpam "SPAM";
+    };
   };
 
   # --- the lint ------------------------------------------------------------------------
@@ -66,11 +66,23 @@ let
       step =
         acc: c:
         if c == "(" || c == "{" then
-          acc // { depth = acc.depth + 1; cur = acc.cur + c; }
+          acc
+          // {
+            depth = acc.depth + 1;
+            cur = acc.cur + c;
+          }
         else if c == ")" || c == "}" then
-          acc // { depth = acc.depth - 1; cur = acc.cur + c; }
+          acc
+          // {
+            depth = acc.depth - 1;
+            cur = acc.cur + c;
+          }
         else if c == " " && acc.depth == 0 then
-          acc // { out = acc.out ++ lib.optional (acc.cur != "") acc.cur; cur = ""; }
+          acc
+          // {
+            out = acc.out ++ lib.optional (acc.cur != "") acc.cur;
+            cur = "";
+          }
         else
           acc // { cur = acc.cur + c; };
       inner =
@@ -115,9 +127,9 @@ let
     }) (sendersOf r)
   ) cfg.filters;
   bySender = lib.groupBy (c: c.sender) claims;
-  conflicts = lib.filter (
-    s: lib.length (lib.unique (map (c: c.label) bySender.${s})) > 1
-  ) (builtins.attrNames bySender);
+  conflicts = lib.filter (s: lib.length (lib.unique (map (c: c.label) bySender.${s})) > 1) (
+    builtins.attrNames bySender
+  );
   conflictReport = lib.concatMapStringsSep "\n" (
     s:
     "    ${s} -> ${lib.concatStringsSep " + " (lib.unique (map (c: c.label) bySender.${s}))}"
@@ -129,14 +141,14 @@ let
   );
 
   checked =
-    lib.throwIf (conflicts != [ ]) ''
-      gws.gmail: a sender is claimed by rules with different labels, and Gmail applies both:
-      ${conflictReport}
-        Scope one of them with a subject: term, or give it an `unless`.''
+    lib.throwIf (conflicts != [ ])
+      ''
+        gws.gmail: a sender is claimed by rules with different labels, and Gmail applies both:
+        ${conflictReport}
+          Scope one of them with a subject: term, or give it an `unless`.''
       (
-        lib.throwIf (duplicateNames != [ ]) "gws.gmail: duplicate filter names: ${toString duplicateNames}" (
-          builtins.listToAttrs (map toResource cfg.filters)
-        )
+        lib.throwIf (duplicateNames != [ ]) "gws.gmail: duplicate filter names: ${toString duplicateNames}"
+          (builtins.listToAttrs (map toResource cfg.filters))
       );
 
   filterType = types.submodule {

@@ -86,7 +86,8 @@ $ tofu import gws_gmail_filter.promos ANe1Bmh...
 
 ## Use with Nix
 
-The flake exposes the provider package, an overlay, and an OpenTofu with it preinstalled.
+The flake exposes the provider package, an overlay, an OpenTofu with it preinstalled, and a
+terranix module.
 
 ```nix
 {
@@ -102,6 +103,44 @@ The flake exposes the provider package, an overlay, and an OpenTofu with it prei
 The package carries `passthru.provider-source-address = "registry.opentofu.org/ahrzb/gws"`,
 which is how `withPlugins` lays out the plugin directory and how OpenTofu resolves `source`.
 The provider is not published to a registry — Nix is the distribution channel.
+
+### The terranix module
+
+`terranixModules.gmail` gives the filters a schema, so a rule says what it means instead of
+repeating label lookups and add/remove mechanics at every call site:
+
+```nix
+# modules = [ ./infra inputs.gws-provider.terranixModules.gmail ];
+
+gws.gmail.filters = [
+  {
+    name = "orders";
+    label = "Shopping/Orders";          # by display name; resolved via the data source
+    query = "from:bestellbestaetigung@amazon.de";
+  }
+  {
+    name = "promos";
+    label = "Shopping/Promotions";
+    query = "{from:news.example.com from:mail.example.org}";
+    unless = "subject:(receipt OR invoice)";
+    archive = true;                     # skip the inbox
+    neverImportant = true;
+  }
+];
+```
+
+It also carries the check the resources cannot express: **two rules claiming one sender with
+different labels**. Gmail applies every matching filter, so both labels land on the message
+and nothing in the UI shows you why. The module fails at evaluation:
+
+```console
+error: gws.gmail: a sender is claimed by rules with different labels, and Gmail applies both:
+    vinted.de -> Shopping/Promotions + Feed (rules: vinted-marketing, conflict-probe)
+```
+
+Labels are not managed by the module, deliberately: deleting a `gws_gmail_label` strips it
+from every message it was ever on, so a `destroy` would be a data-loss event. They are looked
+up by name through `gws_gmail_labels`, and the module can only add and remove filters.
 
 ## Development
 
