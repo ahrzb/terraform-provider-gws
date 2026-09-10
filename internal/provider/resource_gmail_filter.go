@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -33,8 +33,8 @@ type gmailFilterModel struct {
 	ExcludeChats   types.Bool   `tfsdk:"exclude_chats"`
 	Size           types.Int64  `tfsdk:"size"`
 	SizeComparison types.String `tfsdk:"size_comparison"`
-	AddLabelIDs    types.List   `tfsdk:"add_label_ids"`
-	RemoveLabelIDs types.List   `tfsdk:"remove_label_ids"`
+	AddLabelIDs    types.Set    `tfsdk:"add_label_ids"`
+	RemoveLabelIDs types.Set    `tfsdk:"remove_label_ids"`
 	Forward        types.String `tfsdk:"forward"`
 }
 
@@ -104,18 +104,18 @@ func (r *gmailFilterResource) Schema(_ context.Context, _ resource.SchemaRequest
 				PlanModifiers: replace,
 				Validators:    []validator.String{stringvalidator.OneOf("unspecified", "smaller", "larger")},
 			},
-			"add_label_ids": schema.ListAttribute{
+			"add_label_ids": schema.SetAttribute{
 				ElementType:   types.StringType,
 				Optional:      true,
-				PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplace()},
 				MarkdownDescription: "Label ids to add. Use `gws_gmail_label.x.id` for your own " +
 					"labels, or the system ids: `IMPORTANT`, `STARRED`, `UNREAD`, `SPAM`, `TRASH`, " +
 					"`CATEGORY_PERSONAL` and friends.",
 			},
-			"remove_label_ids": schema.ListAttribute{
+			"remove_label_ids": schema.SetAttribute{
 				ElementType:   types.StringType,
 				Optional:      true,
-				PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplace()},
+				PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplace()},
 				MarkdownDescription: "Label ids to remove. Removing `INBOX` is what the Gmail UI " +
 					"calls \"Skip the Inbox\"; removing `IMPORTANT` is \"Never mark as important\".",
 			},
@@ -133,7 +133,7 @@ func (r *gmailFilterResource) Configure(_ context.Context, req resource.Configur
 	r.client = clientFrom(req.ProviderData, &resp.Diagnostics)
 }
 
-func strs(ctx context.Context, l types.List) []string {
+func strs(ctx context.Context, l types.Set) []string {
 	if l.IsNull() || l.IsUnknown() {
 		return nil
 	}
@@ -196,17 +196,21 @@ func (m *gmailFilterModel) fromAPI(ctx context.Context, f *gws.Filter) {
 	if a == nil {
 		a = &gws.FilterAction{}
 	}
-	m.AddLabelIDs = stringListOrNull(ctx, a.AddLabelIDs)
-	m.RemoveLabelIDs = stringListOrNull(ctx, a.RemoveLabelIDs)
+	m.AddLabelIDs = stringSetOrNull(ctx, a.AddLabelIDs)
+	m.RemoveLabelIDs = stringSetOrNull(ctx, a.RemoveLabelIDs)
 	m.Forward = set(a.Forward)
 }
 
-func stringListOrNull(ctx context.Context, in []string) types.List {
+// Label lists are sets, not lists: Gmail returns them in its own order, and modelling them
+// as ordered would make ["INBOX","IMPORTANT"] differ from ["IMPORTANT","INBOX"] - a permanent
+// diff that, because every attribute forces replacement, would destroy and recreate the
+// filter on every apply.
+func stringSetOrNull(ctx context.Context, in []string) types.Set {
 	if len(in) == 0 {
-		return types.ListNull(types.StringType)
+		return types.SetNull(types.StringType)
 	}
-	l, _ := types.ListValueFrom(ctx, types.StringType, in)
-	return l
+	s, _ := types.SetValueFrom(ctx, types.StringType, in)
+	return s
 }
 
 func (r *gmailFilterResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

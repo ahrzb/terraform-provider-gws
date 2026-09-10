@@ -45,8 +45,8 @@ func TestRoundTripThroughAPIShapeIsStable(t *testing.T) {
 	original := gmailFilterModel{
 		Query:          types.StringValue("{from:a.com from:b.com}"),
 		NegatedQuery:   types.StringValue("subject:(receipt)"),
-		AddLabelIDs:    stringListOrNull(ctx, []string{"Label_7"}),
-		RemoveLabelIDs: stringListOrNull(ctx, []string{"INBOX", "IMPORTANT"}),
+		AddLabelIDs:    stringSetOrNull(ctx, []string{"Label_7"}),
+		RemoveLabelIDs: stringSetOrNull(ctx, []string{"INBOX", "IMPORTANT"}),
 		HasAttachment:  types.BoolValue(false),
 		ExcludeChats:   types.BoolValue(false),
 	}
@@ -76,8 +76,8 @@ func TestArchiveIsExpressedAsRemovingInbox(t *testing.T) {
 	ctx := context.Background()
 	m := gmailFilterModel{
 		Query:          types.StringValue("from:newsletter.example"),
-		AddLabelIDs:    stringListOrNull(ctx, []string{"Label_9"}),
-		RemoveLabelIDs: stringListOrNull(ctx, []string{"INBOX"}),
+		AddLabelIDs:    stringSetOrNull(ctx, []string{"Label_9"}),
+		RemoveLabelIDs: stringSetOrNull(ctx, []string{"INBOX"}),
 	}
 	got := m.toAPI(ctx)
 	if len(got.Action.RemoveLabelIDs) != 1 || got.Action.RemoveLabelIDs[0] != "INBOX" {
@@ -98,5 +98,27 @@ func TestNilActionAndCriteriaDoNotPanic(t *testing.T) {
 	}
 	if !m.AddLabelIDs.IsNull() {
 		t.Errorf("add_label_ids = %v, want null", m.AddLabelIDs)
+	}
+}
+
+func TestLabelOrderDoesNotMatter(t *testing.T) {
+	ctx := context.Background()
+	// Gmail returns removeLabelIds in its own order. Modelling these as lists made
+	// ["INBOX","IMPORTANT"] differ from ["IMPORTANT","INBOX"], which planned as 43 filters
+	// destroyed and recreated on an import of an unchanged account.
+	declared := gmailFilterModel{
+		Query:          types.StringValue("from:example.com"),
+		RemoveLabelIDs: stringSetOrNull(ctx, []string{"INBOX", "IMPORTANT"}),
+	}
+	returned := gws.Filter{
+		ID:       "f1",
+		Criteria: &gws.FilterCriteria{Query: "from:example.com"},
+		Action:   &gws.FilterAction{RemoveLabelIDs: []string{"IMPORTANT", "INBOX"}},
+	}
+	var back gmailFilterModel
+	back.fromAPI(ctx, &returned)
+	if !back.RemoveLabelIDs.Equal(declared.RemoveLabelIDs) {
+		t.Errorf("a reordered label set must compare equal:\n  declared %v\n  returned %v",
+			declared.RemoveLabelIDs, back.RemoveLabelIDs)
 	}
 }
