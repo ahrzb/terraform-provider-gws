@@ -7,11 +7,7 @@
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-    }:
+    { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
@@ -24,7 +20,7 @@
           pname = "terraform-provider-gws";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-CUj6tgRdB81bgzscyMjYrAEqeYPdn7e7fjucR4Hsjc4=";
+          vendorHash = "sha256-QCPaYhKQxa7lmCtHahg5PvoPf5d9FFQ+8ZV60XQY15U=";
 
           subPackages = [ "." ];
           # Providers distributed through the registry are built by goreleaser with cgo off;
