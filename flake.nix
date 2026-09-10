@@ -7,7 +7,11 @@
   };
 
   outputs =
-    { self, nixpkgs, flake-utils }:
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
@@ -93,6 +97,15 @@
       # `opentofu.withPlugins` call can pick it up alongside the nixpkgs providers.
       overlays.default = final: _prev: {
         terraform-provider-gws = self.packages.${final.stdenv.hostPlatform.system}.terraform-provider-gws;
+      };
+
+      # A typed terranix schema for filters, so consumers write `archive = true` instead of
+      # repeating label lookups and add/remove mechanics at every call site. It ships here
+      # rather than in the consumer because it is knowledge about *this provider*, and it
+      # carries the sender-conflict assertion that the resources themselves cannot express.
+      terranixModules = rec {
+        gmail = ./modules/terranix/gmail.nix;
+        default = gmail;
       };
     };
 }
